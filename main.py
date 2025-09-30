@@ -14,6 +14,7 @@ class sa_vape(QWidget): # класс окна
         self.total_volume_input = QDoubleSpinBox() # поле ввода общего объема
         self.total_volume_input.setRange(0.1, 1000.0) # диапазон значений
         self.total_volume_input.setSuffix(" мл") # суффикс
+        self.total_volume_input.setValue(100.0)
         
         self.nic_base_input = QDoubleSpinBox() # поле ввода крепости никотиновой базы
         self.nic_base_input.setRange(0.0, 100.0) # диапазон значений
@@ -65,11 +66,19 @@ class sa_vape(QWidget): # класс окна
         self.btn_quit = QPushButton("&Закрыть") # кнопка закрытия
         self.btn_quit.clicked.connect(self.close) # обработчик нажатия кнопки
 
-        self.result_label = QLabel("Результаты появятся здесь") # метка для вывода результатов
+        self.result_total_label = QLabel("Общий объем: —") # строка для общего объема
+        self.result_nic_label = QLabel("Никотиновая база: —") # строка для никотиновой базы
+        self.result_pg_label = QLabel("PG: —") # строка для PG
+        self.result_vg_label = QLabel("VG: —") # строка для VG
+        self.result_aroma_label = QLabel("Ароматизаторы: —") # строка для ароматизаторов
+        self.result_aroma_label.setWordWrap(True) # перенос строк для списка ароматизаторов
 
         # Основной лэйаут
         main_layout = QVBoxLayout() # вертикальный лэйаут
-        main_layout.addWidget(QLabel("<center>Привет, мир! Пора варить стекло!</center>")) # метка приветствия
+        header_label = QLabel("<center>Привет, мир! Пора варить стекло!</center>") # метка приветствия
+        main_layout.addWidget(header_label)
+        
+        content_layout = QHBoxLayout() # горизонтальное размещение параметров и результатов
         
         # Группа основных параметров
         param_layout = QVBoxLayout() # вертикальный лэйаут для параметров
@@ -79,7 +88,7 @@ class sa_vape(QWidget): # класс окна
         param_layout.addWidget(self.nic_base_input) # поле ввода крепости никотиновой базы
         param_layout.addWidget(QLabel("Соотношение PG/VG")) # метка соотношения PG/VG
         param_layout.addWidget(self.pg_slider) # ползунок регулировки соотношения
-
+        
         ratio_values_layout = QHBoxLayout() # горизонтальный лэйаут для отображения значений PG/VG
         ratio_values_layout.addWidget(QLabel("PG")) # подпись для PG
         ratio_values_layout.addWidget(self.pg_input) # поле отображения PG
@@ -89,22 +98,35 @@ class sa_vape(QWidget): # класс окна
         param_layout.addWidget(QLabel("Желаемая крепость никотина"))  # метка желаемой крепости никотина
         param_layout.addWidget(self.nic_target_input) # поле ввода желаемой крепости никотина
         
-        # Группа ароматизаторов
-        main_layout.addLayout(param_layout) # добавление параметров в основной лэйаут
-        main_layout.addWidget(self.btn_add) # добавление кнопки добавления ароматизатора
+        controls_layout = QVBoxLayout() # левая колонка с параметрами и контролами
+        controls_layout.addLayout(param_layout)
+        controls_layout.addWidget(self.btn_add) # добавление кнопки добавления ароматизатора
         self.aroma_group.setLayout(self.aroma_section) # установка секции ароматизаторов в группу
-        main_layout.addWidget(self.aroma_group) # добавление группы ароматизаторов в основной лэйаут
-
-        # Группа кнопок
-        main_layout.addWidget(self.btn_calculate) # добавление кнопки расчета
-        main_layout.addWidget(self.result_label) # добавление метки результатов
+        controls_layout.addWidget(self.aroma_group) # добавление группы ароматизаторов в колонку
+        controls_layout.addStretch()
+        controls_layout.addWidget(self.btn_calculate) # добавление кнопки расчета
+        
+        result_group = QGroupBox("Результаты") # блок результатов
+        result_group_layout = QVBoxLayout() # вертикальный лэйаут блока результатов
+        result_group_layout.addWidget(self.result_total_label) # строка общего объема
+        result_group_layout.addWidget(self.result_nic_label) # строка никотиновой базы
+        result_group_layout.addWidget(self.result_pg_label) # строка PG
+        result_group_layout.addWidget(self.result_vg_label) # строка VG
+        result_group_layout.addWidget(self.result_aroma_label) # строка ароматизаторов
+        result_group_layout.addStretch()
+        result_group.setLayout(result_group_layout)
+        
+        content_layout.addLayout(controls_layout, 2)
+        content_layout.addWidget(result_group, 1)
+        
+        main_layout.addLayout(content_layout)
         main_layout.addWidget(self.btn_quit) # добавление кнопки закрытия
         
         # Стили
         self.setLayout(main_layout) # установка основного лэйаута
         self.setWindowTitle("Расчет СТЕКЛА!") # заголовок окна
-        self.resize(400, 600) # размер окна
-
+        self.resize(500, 350) # размер окна
+        
     def add_aroma(self):
         """Добавление строки с ароматизатором"""
         row = QHBoxLayout() # вертикальный лэйаут для строки
@@ -211,15 +233,15 @@ class sa_vape(QWidget): # класс окна
             if pg_ml < 0:
                 raise ValueError("Недостаточно объема для всех компонентов")
             
-            result_text = (
-                f"<b>Общий объем:</b> {total_volume:.1f} мл\n"
-                f"<b>Никотиновая база:</b> {nic_needed:.2f} мл\n"
-                f"<b>PG:</b> {pg_ml:.2f} мл\n"
-                f"<b>VG:</b> {vg_ml:.2f} мл\n\n"
-                f"<b>Ароматизаторы:</b>\n" + "\n".join(aromas)
-            )
-            
-            self.result_label.setText(result_text) # установка текста метки результатов
+            self.result_total_label.setText(f"Общий объем: {total_volume:.1f} мл")
+            self.result_nic_label.setText(f"Никотиновая база: {nic_needed:.2f} мл")
+            self.result_pg_label.setText(f"PG: {pg_ml:.2f} мл")
+            self.result_vg_label.setText(f"VG: {vg_ml:.2f} мл")
+            if aromas:
+                aroma_lines = "\n".join(aromas)
+                self.result_aroma_label.setText("Ароматизаторы:\n" + aroma_lines)
+            else:
+                self.result_aroma_label.setText("Ароматизаторы: отсутствуют")
             
         except Exception as e: # обработка ошибок
             QMessageBox.critical(self, "Ошибка", str(e)) # вывод сообщения об ошибке 
