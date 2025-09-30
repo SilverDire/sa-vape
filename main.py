@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
-from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QLineEdit, QPushButton, QVBoxLayout, QGroupBox, QHBoxLayout, QDoubleSpinBox, QMessageBox)
+from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QLineEdit, QPushButton, QVBoxLayout, QGroupBox, QHBoxLayout, QDoubleSpinBox, QMessageBox, QSlider, QAbstractSpinBox)
 import sys
+from PyQt5.QtCore import Qt
 
 class sa_vape(QWidget): # класс окна
     def __init__(self): # конструктор
         super().__init__() # вызов конструктора родительского класса
+        self._updating_ratio = False # служебный флаг для синхронизации ползунка и спинбоксов
         self.init_ui() # инициализация интерфейса
         
     def init_ui(self): # функция инициализации интерфейса
@@ -29,6 +31,24 @@ class sa_vape(QWidget): # класс окна
         self.nic_target_input = QDoubleSpinBox() # поле ввода желаемой крепости никотина
         self.nic_target_input.setRange(0.0, 100.0) # диапазон значений
         self.nic_target_input.setSuffix(" мг/мл") # суффикс
+
+        self.pg_input.setDecimals(1) # точность PG до десятых
+        self.pg_input.setSingleStep(0.5) # шаг изменения PG по умолчанию
+        self.pg_input.setValue(50.0) # базовое значение PG
+
+        self.vg_input.setDecimals(1) # точность VG до десятых
+        self.vg_input.setSingleStep(0.5) # шаг изменения VG по умолчанию
+        self.vg_input.setValue(50.0) # базовое значение VG
+        self.vg_input.setReadOnly(True) # запрет ручного ввода VG
+        self.vg_input.setButtonSymbols(QAbstractSpinBox.NoButtons) # скрываем стрелки у VG
+
+        self.pg_slider = QSlider(Qt.Horizontal) # ползунок для управления соотношением PG/VG
+        self.pg_slider.setRange(0, 100) # диапазон значений в процентах
+        self.pg_slider.setSingleStep(10) # шаг при управлении с клавиатуры
+        self.pg_slider.setPageStep(10) # шаг при PageUp/PageDown
+        self.pg_slider.setValue(int(round(self.pg_input.value()))) # синхронизация ползунка c PG
+        self.pg_slider.valueChanged.connect(self.update_ratio_from_slider) # связь ползунка со значениями
+        self.pg_input.valueChanged.connect(self.update_slider_from_pg) # связь ручного ввода PG с ползунком
 
         # Секция ароматизаторов
         self.aroma_section = QVBoxLayout() # вертикальный лэйаут для ароматизаторов
@@ -57,10 +77,15 @@ class sa_vape(QWidget): # класс окна
         param_layout.addWidget(self.total_volume_input) # поле ввода общего объема
         param_layout.addWidget(QLabel("Крепость никотиновой базы")) # метка крепости никотиновой базы
         param_layout.addWidget(self.nic_base_input) # поле ввода крепости никотиновой базы
-        param_layout.addWidget(QLabel("PG")) # метка PG
-        param_layout.addWidget(self.pg_input) # поле ввода PG
-        param_layout.addWidget(QLabel("VG")) # метка VG
-        param_layout.addWidget(self.vg_input) # поле ввода VG
+        param_layout.addWidget(QLabel("Соотношение PG/VG")) # метка соотношения PG/VG
+        param_layout.addWidget(self.pg_slider) # ползунок регулировки соотношения
+
+        ratio_values_layout = QHBoxLayout() # горизонтальный лэйаут для отображения значений PG/VG
+        ratio_values_layout.addWidget(QLabel("PG")) # подпись для PG
+        ratio_values_layout.addWidget(self.pg_input) # поле отображения PG
+        ratio_values_layout.addWidget(QLabel("VG")) # подпись для VG
+        ratio_values_layout.addWidget(self.vg_input) # поле отображения VG
+        param_layout.addLayout(ratio_values_layout) # добавление значений PG/VG в параметры
         param_layout.addWidget(QLabel("Желаемая крепость никотина"))  # метка желаемой крепости никотина
         param_layout.addWidget(self.nic_target_input) # поле ввода желаемой крепости никотина
         
@@ -115,6 +140,39 @@ class sa_vape(QWidget): # класс окна
                         child.widget().deleteLater() # удаление виджета
                 item.layout().deleteLater() # удаление лэйаута
             self.aroma_widgets = [w for w in self.aroma_widgets if w[2] != layout] # обновление списка виджетов
+
+
+    def update_ratio_from_slider(self, slider_value):
+        """Синхронизация значений PG/VG при движении ползунка"""
+        if self._updating_ratio: # предотвращаем зацикливание сигналов
+            return
+        snapped_value = int(round(slider_value / 10) * 10)
+        snapped_value = max(0, min(100, snapped_value))
+        self._updating_ratio = True
+        if snapped_value != slider_value:
+            self.pg_slider.setValue(snapped_value)
+            slider_value = snapped_value
+        pg_percent = float(slider_value)
+        self.pg_input.setValue(pg_percent)
+        vg_percent = max(0.0, 100.0 - pg_percent)
+        self.vg_input.setValue(vg_percent)
+        self._updating_ratio = False
+
+    def update_slider_from_pg(self, pg_percent):
+        """Синхронизация ползунка при ручном вводе PG"""
+        if self._updating_ratio: # предотвращаем зацикливание сигналов
+            return
+        snapped_pg = round(pg_percent / 10.0) * 10
+        snapped_pg = min(max(snapped_pg, 0.0), 100.0)
+        self._updating_ratio = True
+        if self.pg_input.value() != snapped_pg:
+            self.pg_input.setValue(snapped_pg)
+        slider_value = int(snapped_pg)
+        if self.pg_slider.value() != slider_value:
+            self.pg_slider.setValue(slider_value)
+        vg_percent = max(0.0, 100.0 - snapped_pg)
+        self.vg_input.setValue(vg_percent)
+        self._updating_ratio = False
 
     def calculate(self):
         """Расчет параметров"""
