@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QLineEdit, QPushButton, QVBoxLayout, QGroupBox, QHBoxLayout, QDoubleSpinBox, QMessageBox, QSlider, QAbstractSpinBox, QSizePolicy, QGraphicsDropShadowEffect)
+from PyQt5.QtWidgets import (QApplication, QScrollArea, QWidget, QLabel, QLineEdit, QPushButton, QVBoxLayout, QGroupBox, QHBoxLayout, QDoubleSpinBox, QMessageBox, QSlider, QAbstractSpinBox, QSizePolicy, QGraphicsDropShadowEffect, QListWidget, QInputDialog)
 from PyQt5.QtGui import QFontDatabase, QFont, QColor
 from pathlib import Path
 import sys
 import os
+import json
 from PyQt5.QtCore import Qt, QObject, QEvent, QVariantAnimation, QEasingCurve, QCoreApplication
 policy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.MinimumExpanding)
 
@@ -53,6 +54,18 @@ class FocusGlowFilter(QObject):
         self.effect.setColor(self.base_color)
         self.effect.setEnabled(alpha > 0)
 
+class SmartDoubleSpinBox(QDoubleSpinBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Запрещаем получать фокус от колесика мыши (только клик или Tab)
+        self.setFocusPolicy(Qt.StrongFocus)
+    def wheelEvent(self, event):
+        # Теперь это сработает только если пользователь реально кликнул в поле
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
 def load_custom_fonts():
     fonts_dir = Path(__file__).parent / "fonts"
     families = {}
@@ -85,27 +98,27 @@ class sa_vape(QWidget): # класс окна
         
     def init_ui(self): # функция инициализации интерфейса
         # Основные поля ввода
-        self.total_volume_input = QDoubleSpinBox() # поле ввода общего объема
+        self.total_volume_input = SmartDoubleSpinBox() # поле ввода общего объема
         self.total_volume_input.setRange(0.1, 1000.0) # диапазон значений
         self.total_volume_input.setSuffix(" мл") # суффикс
         self.total_volume_input.setValue(100.0)
         self.total_volume_input.setButtonSymbols(QAbstractSpinBox.NoButtons) # скрываем стрелки у volumeinput
         
-        self.nic_base_input = QDoubleSpinBox() # поле ввода крепости никотиновой базы
+        self.nic_base_input = SmartDoubleSpinBox() # поле ввода крепости никотиновой базы
         self.nic_base_input.setRange(0.0, 100.0) # диапазон значений
         self.nic_base_input.setSuffix(" мг/мл") # суффикс
         self.nic_base_input.setValue(100.0)
         self.nic_base_input.setButtonSymbols(QAbstractSpinBox.NoButtons) # скрываем стрелки у nicbase
         
-        self.pg_input = QDoubleSpinBox() # поле ввода PG
+        self.pg_input = SmartDoubleSpinBox() # поле ввода PG
         self.pg_input.setRange(0.0, 100.0) # диапазон значений
         self.pg_input.setSuffix(" %") # суффикс
         
-        self.vg_input = QDoubleSpinBox() # поле ввода VG
+        self.vg_input = SmartDoubleSpinBox() # поле ввода VG
         self.vg_input.setRange(0.0, 100.0) # диапазон значений
         self.vg_input.setSuffix(" %") # суффикс
         
-        self.nic_target_input = QDoubleSpinBox() # поле ввода желаемой крепости никотина
+        self.nic_target_input = SmartDoubleSpinBox() # поле ввода желаемой крепости никотина
         self.nic_target_input.setRange(0.0, 100.0) # диапазон значений
         self.nic_target_input.setSuffix(" мг/мл") # суффикс
         self.nic_target_input.setButtonSymbols(QAbstractSpinBox.NoButtons) # скрываем стрелки у nic
@@ -131,10 +144,14 @@ class sa_vape(QWidget): # класс окна
 
         # Секция ароматизаторов
         self.aroma_section = QVBoxLayout() # вертикальный лэйаут для ароматизаторов
-        self.aroma_section.setContentsMargins(self.dp(5), self.dp(45), self.dp(5), self.dp(5))  # (int left, int top, int right, int bottom)
+        self.aroma_section.setContentsMargins(self.dp(5), self.dp(5), self.dp(5), self.dp(5))  # (int left, int top, int right, int bottom)
+        self.aroma_section.setAlignment(Qt.AlignTop)
         self.aroma_widgets = [] # список виджетов ароматизаторов
         self.aroma_group = QGroupBox("Ароматизаторы") # группа для ароматизаторов
+        self.aroma_container = QWidget() # контейнер для секции ароматизаторов
+        self.scroll_area = QScrollArea() # скролл секция
         self.aroma_group.setSizePolicy(policy)
+
         # Кнопки
         self.btn_add = QPushButton("Добавить ароматизатор") # кнопка добавления ароматизатора
         self.btn_add.clicked.connect(self.add_aroma) # обработчик нажатия кнопки
@@ -152,8 +169,34 @@ class sa_vape(QWidget): # класс окна
 
         # Основной лэйаут
         main_layout = QVBoxLayout() # вертикальный лэйаут
+        title_bar_layout = QHBoxLayout() # горизонтальное размещение кнопок управления окном
+        # метка названия программы
+        SA_VAPE_label = QLabel("<center>SA-VAPE v1.1</center>") 
+        SA_VAPE_label.setAttribute(Qt.WA_TransparentForMouseEvents, True) # для перестаскивания мышью
+        SA_VAPE_label.setFont(QFont(FONT_FAMILIES['latoBold'], 12))
+        SA_VAPE_label.setStyleSheet("""
+            background-color: #143245;
+            border-radius: 5px;
+        """)
+        title_bar_layout.addWidget(SA_VAPE_label)
+        main_layout.addLayout(title_bar_layout)
+        
+        # Кнопки управления окном
+        self.btn_minimize = QPushButton("—")
+        self.btn_minimize.setObjectName("MinBtn")
+        self.btn_minimize.clicked.connect(self.showMinimized)
+        self.btn_minimize.setFixedSize(self.dp(30), self.dp(30))
+        self.btn_close = QPushButton("✕")
+        self.btn_close.setObjectName("CloseBtn")
+        self.btn_close.clicked.connect(self.close)
+        self.btn_close.setFixedSize(self.dp(30), self.dp(30))
+        title_bar_layout.addWidget(self.btn_minimize)
+        title_bar_layout.addWidget(self.btn_close)
+        
         header_label = QLabel("<center>SA-VAPE</center>") # метка приветствия
+        header_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         header_rofl = QLabel("<center>Йоу, чумба, пора делать стекло!!!</center>") # метка обращения с приколом
+        header_rofl.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         main_layout.addWidget(header_label)
         main_layout.addWidget(header_rofl)
         
@@ -200,12 +243,20 @@ class sa_vape(QWidget): # класс окна
         param_layout.addWidget(self.nic_target_label)  # метка желаемой крепости никотина
         param_layout.addWidget(self.nic_target_input) # поле ввода желаемой крепости никотина
         
+        # сборка секции ароматизаторов и кнопок
         controls_layout = QVBoxLayout() # левая колонка с параметрами и контролами
         controls_layout.addLayout(param_layout)
         controls_layout.addWidget(self.btn_add) # добавление кнопки добавления ароматизатора
-        self.aroma_group.setLayout(self.aroma_section) # установка секции ароматизаторов в группу
+        # собираем матрёшку из скролл секции и группы
+        self.aroma_container.setLayout(self.aroma_section)
+        self.scroll_area.setWidgetResizable(True) # включение автоподгонки размера
+        self.scroll_area.setWidget(self.aroma_container) # установка виджета 
+        group_layout = QVBoxLayout() # вертикальный лэйаут для секции ароматизаторов
+        group_layout.addWidget(self.scroll_area)
         controls_layout.addWidget(self.aroma_group) # добавление группы ароматизаторов в колонку
-        controls_layout.addStretch()
+        self.aroma_group.setLayout(group_layout) # установка лэйаута
+
+       # controls_layout.addStretch() # растягивание лэйаута
         controls_layout.addWidget(self.btn_calculate) # добавление кнопки расчета
         
         result_group = QGroupBox("Результаты") # блок результатов
@@ -225,6 +276,7 @@ class sa_vape(QWidget): # класс окна
         
         main_layout.addLayout(content_layout)
         header_label2 = QLabel("<center>By SilverDire And Ameteon</center>") # метка о авторах
+        header_label2.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         main_layout.addWidget(header_label2)
         
         # Графика
@@ -371,13 +423,75 @@ class sa_vape(QWidget): # класс окна
             margin: -5px 0;
             border-radius: {group_border_radiusQSlider}px;
         }}
+
+        QScrollBar::add-page:vertical,
+        QScrollBar::sub-page:vertical {{
+            background: none;
+        }}
+
+        QScrollArea {{
+            border: none;
+            background: transparent;
+        }}
         
+        QScrollBar {{
+            background: #143245;
+            width: 10px;
+            border-radius: 5px;
+        }}
+
+        QScrollBar:vertical {{
+            background: #143245;
+            width: 10px;
+            border-radius: 5px;
+        }}
+
+        QScrollBar::handle:vertical {{
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                        stop:0 #3dffff, stop:1 #ff6bff);
+            border-radius: 5px;
+            min-height: 20px;
+        }}
+
+        QScrollBar::add-line:vertical {{
+            background: none;
+            border: none;
+            height: 0px;
+        }}
+
+        QScrollBar::sub-line:vertical {{
+            background: none;
+            border: none;
+            height: 0px;
+        }}
+
+        #MinBtn, #CloseBtn {{
+          background:transparent;
+          border:none;
+          font-family: 'Arial';
+          font-size: 14pt;
+          color: #e0f7ff;
+          padding: 0px;
+          border-radius: 5px;
+         }}
+
+         #MinBtn:hover {{
+            background-color: rgba(0, 244, 255, 0.2);
+            color: #00f4ff;
+         }}
+
+         #CloseBtn:hover {{
+           background: #ff0040;
+           color: white;
+           }}
+
         """)
         
         # Стили
         self.setLayout(main_layout) # установка основного лэйаута
         self.setWindowTitle("Расчет СТЕКЛА!") # заголовок окна
-        self.resize(self.dp(800), self.dp(970)) # размер окна
+        self.resize(self.dp(800), self.dp(800)) # размер окна
+        self.setWindowFlags(Qt.FramelessWindowHint)
         
     def add_aroma(self):
         """Добавление строки с ароматизатором"""
@@ -385,7 +499,7 @@ class sa_vape(QWidget): # класс окна
         name = QLineEdit() # поле ввода названия ароматизатора
         name.setPlaceholderText("Название ароматизатора") # подсказка
         
-        percent = QDoubleSpinBox() # поле ввода процента
+        percent = SmartDoubleSpinBox() # поле ввода процента
         percent.setRange(0.0, 100.0) # диапазон значений
         percent.setSingleStep(0.5) # шаг
         percent.setSuffix(" %") # суффикс
@@ -492,6 +606,16 @@ class sa_vape(QWidget): # класс окна
             
         except Exception as e: # обработка ошибок
             QMessageBox.critical(self, "Ошибка", str(e)) # вывод сообщения об ошибке 
+
+    # Перетаскивание окна мышью
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.drag_pos = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.LeftButton and hasattr(self, 'drag_pos'):
+            self.move(event.globalPos() - self.drag_pos)
+            event.accept()
 
 if __name__ == "__main__":
     os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
