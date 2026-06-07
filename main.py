@@ -6,8 +6,10 @@ from pathlib import Path
 import sys
 import os
 import json
+import ctypes
 from PyQt5.QtCore import Qt, QObject, QEvent, QVariantAnimation, QEasingCurve, QCoreApplication
 policy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.MinimumExpanding)
+
 
 CUSTOM_FONTS = {
     "cyberpunk": "Cyberpunk_RUS_BY_LYAJKA.ttf",
@@ -280,7 +282,9 @@ class sa_vape(QWidget): # класс окна
         # метка названия программы
         SA_VAPE_label = QLabel("<center>SA-VAPE v1.1. Йоу, чумба, пора делать стекло!!!</center>") 
         SA_VAPE_label.setAttribute(Qt.WA_TransparentForMouseEvents, True) # для перестаскивания мышью
-        SA_VAPE_label.setFont(QFont(FONT_FAMILIES['latoBold'], 12))
+        title_font = QFont(FONT_FAMILIES['latoBold'])
+        title_font.setPixelSize(16)
+        SA_VAPE_label.setFont(title_font)
         SA_VAPE_label.setStyleSheet("""
             background-color: #143245;
             border-radius: 5px;
@@ -290,11 +294,7 @@ class sa_vape(QWidget): # класс окна
         main_layout.addLayout(title_bar_layout)
         title_bar_layout.addWidget(self.btn_minimize)
         title_bar_layout.addWidget(self.btn_close)
-        
-        header_label = QLabel("<center>SA-VAPE</center>") # метка приветствия
-        header_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        main_layout.addWidget(header_label)
-        
+            
         content_layout = QHBoxLayout() # горизонтальное размещение параметров и результатов
         
         # Группа основных параметров
@@ -350,7 +350,7 @@ class sa_vape(QWidget): # класс окна
         self.scroll_area.setWidgetResizable(True) # включение автоподгонки размера
         self.scroll_area.setWidget(self.aroma_container) # установка виджета 
         group_layout = QVBoxLayout() # вертикальный лэйаут для секции ароматизаторов
-        group_layout.setContentsMargins(6, 45, 12, 1)  # (int left, int top, int right, int bottom)
+        group_layout.setContentsMargins(6, 35, 12, 1)  # (int left, int top, int right, int bottom)
         group_layout.addWidget(self.scroll_area)
         controls_layout.addWidget(self.aroma_group) # добавление группы ароматизаторов в колонку
         self.aroma_group.setLayout(group_layout) # установка лэйаута
@@ -377,25 +377,19 @@ class sa_vape(QWidget): # класс окна
 
         # добавляем группы на основной лэйаут
         content_layout.addLayout(controls_layout, 4)
-        content_layout.addWidget(result_group, 3)
+        content_layout.addWidget(result_group, 2)
         content_layout.addWidget(recipe_group, 2)
         
-        # метки авторов
         main_layout.addLayout(content_layout)
-        header_label2 = QLabel("<center>By SilverDire And Ameteon</center>") # метка о авторах
-        header_label2.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        main_layout.addWidget(header_label2)
         
         # Графика
 
         ## Надписи основных параметров
-        labels_font = QFont(FONT_FAMILIES["latoBold"], 14)
+        labels_font = QFont(FONT_FAMILIES["latoBold"])
+        labels_font.setPixelSize(20)
         for i in param_labels:
             i.setFont(labels_font)
 
-        ## Заголовки
-        header_label.setFont(QFont(FONT_FAMILIES["cyberpunk"], 45)) # установка шрифта заголовка
-        header_label2.setFont(QFont(FONT_FAMILIES["zelek"], 20)) # установка шрифта надписи о авторах
         
         ## Включаем подсветку выбранных полей (для ароматизаторов в функции добавления)
         self.input_glow = FocusGlowFilter(QColor(0, 244, 255, 128), duration=200)
@@ -414,11 +408,11 @@ class sa_vape(QWidget): # класс окна
         group_border_radiusQSlider = 3
         group_border_radiusQSlider = 8
 
-        group_font_QLabel = 14
-        group_font_QDoubleSpinBox = 14
-        group_font_QLineEdit = 15
-        group_font_QGroupBox = 18
-        group_font_QPushButton = 20
+        group_font_QLabel = 18
+        group_font_QDoubleSpinBox = 18
+        group_font_QLineEdit = 18
+        group_font_QGroupBox = 24
+        group_font_QPushButton = 24
 
         group_paddingUP_QGroupBox_title = 7
         group_paddingRight_QGroupBox_title = 1
@@ -431,7 +425,7 @@ class sa_vape(QWidget): # класс окна
         result_group.setStyleSheet(f"""
             #ResultGroup QLabel {{
                 font-family: '{FONT_FAMILIES['latoBold']}';
-                font-size: {group_font_QLabel}pt;
+                font-size: {group_font_QLabel}px;
         }}
         """)
 
@@ -450,7 +444,7 @@ class sa_vape(QWidget): # класс окна
             color: #e0f7ff;
             selection-background-color: #00f4ff;
             selection-color: #060814;
-            font-size: {group_font_QDoubleSpinBox}pt;
+            font-size: {group_font_QDoubleSpinBox}px;
             font-family: '{FONT_FAMILIES['latoBold']}';
             background: qradialgradient(cx:0.5, cy:0.5, radius:0.9,
                                         fx:0.5, fy:0.5,
@@ -466,7 +460,7 @@ class sa_vape(QWidget): # класс окна
             color: #e0f7ff;
             selection-background-color: #00f4ff;
             selection-color: #060814;
-            font-size: {group_font_QLineEdit}pt;
+            font-size: {group_font_QLineEdit}px;
             font-family: '{FONT_FAMILIES['zelek']}';
             background: qradialgradient(cx:0.5, cy:0.5, radius:0.9,
                                         fx:0.5, fy:0.5,
@@ -486,7 +480,7 @@ class sa_vape(QWidget): # класс окна
         }}
         
         QGroupBox {{
-            font-size: {group_font_QGroupBox}pt;
+            font-size: {group_font_QGroupBox}px;
             font-family: '{FONT_FAMILIES['zelek']}';
             border: 1px solid #143245;
             border-radius: {group_border_radiusQGroupBox}px;
@@ -501,7 +495,7 @@ class sa_vape(QWidget): # класс окна
         }}
                            
         QPushButton {{
-            font-size: {group_font_QPushButton}pt;
+            font-size: {group_font_QPushButton}px;
             font-family: '{FONT_FAMILIES['zelek']}';
             background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                                         stop:0 #00f4ff, stop:1 #ff3bf1);
@@ -575,7 +569,7 @@ class sa_vape(QWidget): # класс окна
           background:transparent;
           border:none;
           font-family: 'Arial';
-          font-size: 14pt;
+          font-size: 14px;
           color: #e0f7ff;
           padding: 0px;
           border-radius: 5px;
@@ -598,7 +592,7 @@ class sa_vape(QWidget): # класс окна
             padding: 5px;
             color: #e0f7ff;
             font-family: 'Arial';
-            font-size: 12pt;
+            font-size: 12px;
             outline: none; /* Убирает пунктирную рамку при клике */
         }}
 
@@ -628,7 +622,9 @@ class sa_vape(QWidget): # класс окна
         # Стили
         self.setLayout(main_layout) # установка основного лэйаута
         self.setWindowTitle("Расчет СТЕКЛА!") # заголовок окна
-        self.resize(1100, 800) # размер окна
+ #       screen = QApplication.primaryScreen().availableGeometry()
+ #       self.resize(int(screen.width() * 0.5), int(screen.height() * 0.65))
+        self.resize(950, 700) # размер окна
         self.setWindowFlags(Qt.FramelessWindowHint)
         
     def add_aroma(self):
@@ -756,10 +752,11 @@ class sa_vape(QWidget): # класс окна
             event.accept()
 
 if __name__ == "__main__":
-    os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
-    os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
-    QCoreApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-    QCoreApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    ctypes.windll.shcore.SetProcessDpiAwareness(0)
+  #  os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
+  #  os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
+  #  QCoreApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+  #  QCoreApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     app = QApplication(sys.argv)
     FONT_FAMILIES = load_custom_fonts()
     window = sa_vape()
