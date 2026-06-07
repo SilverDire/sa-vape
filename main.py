@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-from PyQt5.QtWidgets import (QApplication, QScrollArea, QWidget, QLabel, QLineEdit, QPushButton, QVBoxLayout, QGroupBox, QHBoxLayout, QDoubleSpinBox, QMessageBox, QSlider, QAbstractSpinBox, QSizePolicy, QGraphicsDropShadowEffect, QListWidget, QInputDialog)
+import subprocess
+from PyQt5.QtWidgets import (QApplication, QScrollArea, QWidget, QLabel, QLineEdit, QPushButton, QVBoxLayout, QGroupBox, QHBoxLayout, QDoubleSpinBox, QMessageBox, QSlider, QAbstractSpinBox, QSizePolicy, QGraphicsDropShadowEffect, QListWidget, QInputDialog, QMenu)
 from PyQt5.QtGui import QFontDatabase, QFont, QColor
 from pathlib import Path
 import sys
@@ -94,8 +95,100 @@ class sa_vape(QWidget): # класс окна
             return int(round(value * self.scale_factor))
         self.dp = scale
         
+        self.recipes_data = {} # Словарь для хранения всех рецептов: { "Имя": {данные}, ... }
+        self.recipes_file = "recipes.json" # Имя файла базы данных
+
         self.init_ui() # инициализация интерфейса
+        self.load_recipes_from_file() # загрузка списка рецептов
+
+    def show_context_menu(self, pos): # функция вызова контекстного меню
+        item = self.recipe_list.itemAt(pos) # Проверяем, кликнули ли по элементу
+        if item is not None:
+            menu = QMenu(self)
+            delete_action = menu.addAction("Удалить рецепт")
+            # Показываем меню и ждем выбора пользователя
+            action = menu.exec_(self.recipe_list.mapToGlobal(pos))
+            if action == delete_action:
+                self.delete_recipe(item) # передаем элемент на удаление
+
+    def save_recipe(self): # собирает данные из интерфейса и кладет их в словарь
+        # 1. Запрашиваем название через всплывающее окно
+        text, ok = QInputDialog.getText(self, 'Сохранение', 'Введите название рецепта:')
         
+        # Если нажали ОК и текст не пустой
+        if ok and text:
+            # 2. Собираем ароматизаторы в список словарей
+            aromas = []
+            for name_widget, percent_widget, _ in self.aroma_widgets:
+                # В name_widget лежит QLineEdit, текст берем через .text()
+                # В percent_widget лежит SpinBox, значение берем через .value()
+                aromas.append({
+                    "name": name_widget.text(),
+                    "percent": percent_widget.value()
+                })
+            
+            # 3. Сохраняем все данные в наш главный словарь по ключу text (название рецепта)
+            self.recipes_data[text] = {
+                "total_volume": self.total_volume_input.value(),
+                "nic_base": self.nic_base_input.value(),
+                "pg": self.pg_input.value(),
+                "vg": self.vg_input.value(),
+                "nic_target": self.nic_target_input.value(),
+                "aromas": aromas
+            }
+            
+            # 4. Обновляем визуальный список QListWidget 
+            self.recipe_list.clear()
+            self.recipe_list.addItems(self.recipes_data.keys())
+            
+            # 5. Вызываем физическое сохранение в файл
+            self.save_recipes_to_file()
+
+    def load_recipe(self, item): # функция загрузки рецепта
+        recipe_name = item.text() # получаем элемент по названию
+        recipe_data = self.recipes_data[recipe_name] # получаем данные рецепта
+        # Устанавливаем значения в поля ввода
+        self.total_volume_input.setValue(recipe_data["total_volume"])
+        self.nic_base_input.setValue(recipe_data["nic_base"])
+        self.pg_input.setValue(recipe_data["pg"])
+        self.vg_input.setValue(recipe_data["vg"])
+        self.nic_target_input.setValue(recipe_data["nic_target"])
+        
+        # Очищаем текущие ароматизаторы
+        for name, percent, row in list(self.aroma_widgets):
+            self.remove_aroma(row) # используем готовую функцию удаления
+        
+        # Добавляем ароматизаторы из загруженного рецепта
+        for aroma in recipe_data["aromas"]:
+            self.add_aroma() # создаем пустую строку на экране
+            last_name, last_percent, _ = self.aroma_widgets[-1] # получаем последнюю созданную строку
+            last_name.setText(aroma["name"]) # устанавливаем имя ароматизатора
+            last_percent.setValue(aroma["percent"]) # устанавливаем процент ароматизатора
+        
+        self.calculate() # вызываем расчет для пересчета значений
+
+    def save_recipes_to_file(self): # Сохраняет словарь recipes_data в файл JSON
+        # Открываем файл на запись ('w') с кодировкой utf-8
+        with open(self.recipes_file, "w", encoding="utf-8") as f:
+            json.dump(self.recipes_data, f, ensure_ascii=False, indent=4)
+
+    def load_recipes_from_file(self): #Загружает данные из JSON файла при старте
+        if os.path.exists(self.recipes_file): # Проверяем, существует ли файл
+            with open(self.recipes_file, "r", encoding="utf-8") as f:
+                self.recipes_data = json.load(f) # Читаем словарь из файла
+            
+            # Очищаем список и добавляем в него все ключи (названия рецептов)
+            self.recipe_list.clear()
+            self.recipe_list.addItems(self.recipes_data.keys())
+
+    def delete_recipe(self, item): # функция удаления рецепта
+        recipe_name = item.text() # получаем элемент по названию
+        reply = QMessageBox.question(self, 'Удаление', f'Удалить рецепт "{recipe_name}"?', QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes: # если пользователь нажал да
+            del self.recipes_data[recipe_name] # удаляем рецепт из словаря
+            self.save_recipes_to_file() # сохраняем обновленный словарь в файл
+            self.recipe_list.takeItem(self.recipe_list.row(item)) # удаляем элемент из списка
+
     def init_ui(self): # функция инициализации интерфейса
         # Основные поля ввода
         self.total_volume_input = SmartDoubleSpinBox() # поле ввода общего объема
@@ -155,32 +248,11 @@ class sa_vape(QWidget): # класс окна
         # Кнопки
         self.btn_add = QPushButton("Добавить ароматизатор") # кнопка добавления ароматизатора
         self.btn_add.clicked.connect(self.add_aroma) # обработчик нажатия кнопки
-        
         self.btn_calculate = QPushButton("Рассчитать") # кнопка расчета
-        self.btn_calculate.clicked.connect(self.calculate) # обработчик нажатия кнопки
-        
-        # блок результатов
-        self.result_total_label = QLabel("Общий объем: —") # строка для общего объема
-        self.result_nic_label = QLabel("Никотиновая база: —") # строка для никотиновой базы
-        self.result_pg_label = QLabel("PG: —") # строка для PG
-        self.result_vg_label = QLabel("VG: —") # строка для VG
-        self.result_aroma_label = QLabel("Ароматизаторы: —") # строка для ароматизаторов
-        self.result_aroma_label.setWordWrap(True) # перенос строк для списка ароматизаторов
+        self.btn_calculate.clicked.connect(self.calculate)
+        self.btn_save_recipe = QPushButton("Сохранить") # кнопка сохранения рецепта
+        self.btn_save_recipe.clicked.connect(self.save_recipe)
 
-        # Основной лэйаут
-        main_layout = QVBoxLayout() # вертикальный лэйаут
-        title_bar_layout = QHBoxLayout() # горизонтальное размещение кнопок управления окном
-        # метка названия программы
-        SA_VAPE_label = QLabel("<center>SA-VAPE v1.1</center>") 
-        SA_VAPE_label.setAttribute(Qt.WA_TransparentForMouseEvents, True) # для перестаскивания мышью
-        SA_VAPE_label.setFont(QFont(FONT_FAMILIES['latoBold'], 12))
-        SA_VAPE_label.setStyleSheet("""
-            background-color: #143245;
-            border-radius: 5px;
-        """)
-        title_bar_layout.addWidget(SA_VAPE_label)
-        main_layout.addLayout(title_bar_layout)
-        
         # Кнопки управления окном
         self.btn_minimize = QPushButton("—")
         self.btn_minimize.setObjectName("MinBtn")
@@ -190,15 +262,45 @@ class sa_vape(QWidget): # класс окна
         self.btn_close.setObjectName("CloseBtn")
         self.btn_close.clicked.connect(self.close)
         self.btn_close.setFixedSize(self.dp(30), self.dp(30))
+        
+        # блок результатов
+        self.result_total_label = QLabel("Объем: —") # строка для общего объема
+        self.result_nic_label = QLabel("База: —") # строка для никотиновой базы
+        self.result_pg_label = QLabel("PG: —") # строка для PG
+        self.result_vg_label = QLabel("VG: —") # строка для VG
+        self.result_aroma_label = QLabel("Ароматизаторы: —") # строка для ароматизаторов
+        self.result_aroma_label.setWordWrap(True) # перенос строк для списка ароматизаторов
+
+        # блок браузера рецептов
+        recipe_group = QGroupBox("Сохраненные")
+      #  recipe_group.setMaximumWidth(self.dp(540)) # задаём максимальную ширину блока
+        recipe_group_layout = QVBoxLayout()
+        recipe_group_layout.setContentsMargins(self.dp(6), self.dp(45), self.dp(12), self.dp(1)) 
+        self.recipe_list = QListWidget() # список для хранения рецептов
+        self.recipe_list.setContextMenuPolicy(Qt.CustomContextMenu) # разрешаем контекстное меню
+        self.recipe_list.customContextMenuRequested.connect(self.show_context_menu) # открываем контекстное меню по запросу
+        self.recipe_list.itemDoubleClicked.connect(self.load_recipe) # открываем рецепт по двойному клику
+
+        # Основной лэйаут
+        main_layout = QVBoxLayout() # вертикальный лэйаут
+        title_bar_layout = QHBoxLayout() # горизонтальное размещение кнопок управления окном
+        # метка названия программы
+        SA_VAPE_label = QLabel("<center>SA-VAPE v1.1. Йоу, чумба, пора делать стекло!!!</center>") 
+        SA_VAPE_label.setAttribute(Qt.WA_TransparentForMouseEvents, True) # для перестаскивания мышью
+        SA_VAPE_label.setFont(QFont(FONT_FAMILIES['latoBold'], 12))
+        SA_VAPE_label.setStyleSheet("""
+            background-color: #143245;
+            border-radius: 5px;
+        """)
+        # добавляем заголовок и кнопки выхода и сворачивания
+        title_bar_layout.addWidget(SA_VAPE_label)
+        main_layout.addLayout(title_bar_layout)
         title_bar_layout.addWidget(self.btn_minimize)
         title_bar_layout.addWidget(self.btn_close)
         
         header_label = QLabel("<center>SA-VAPE</center>") # метка приветствия
         header_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        header_rofl = QLabel("<center>Йоу, чумба, пора делать стекло!!!</center>") # метка обращения с приколом
-        header_rofl.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         main_layout.addWidget(header_label)
-        main_layout.addWidget(header_rofl)
         
         content_layout = QHBoxLayout() # горизонтальное размещение параметров и результатов
         
@@ -228,8 +330,11 @@ class sa_vape(QWidget): # класс окна
         param_layout.setContentsMargins(self.dp(1), self.dp(10), self.dp(1), self.dp(1))  # (int left, int top, int right, int bottom)
         param_layout.addWidget(self.total_volume_label) # метка общего объема
         param_layout.addWidget(self.total_volume_input) # поле ввода общего объема
-        param_layout.addWidget(self.nic_base_label) # метка крепости никотиновой базы
-        param_layout.addWidget(self.nic_base_input) # поле ввода крепости никотиновой базы
+
+       # пока убрано из-за ненадобности
+       # param_layout.addWidget(self.nic_base_label) # метка крепости никотиновой базы
+       # param_layout.addWidget(self.nic_base_input) # поле ввода крепости никотиновой базы
+
         param_layout.addWidget(self.PG_VG_ratio_label) # метка соотношения PG/VG
         param_layout.addWidget(self.pg_slider) # ползунок регулировки соотношения
         
@@ -252,6 +357,7 @@ class sa_vape(QWidget): # класс окна
         self.scroll_area.setWidgetResizable(True) # включение автоподгонки размера
         self.scroll_area.setWidget(self.aroma_container) # установка виджета 
         group_layout = QVBoxLayout() # вертикальный лэйаут для секции ароматизаторов
+        group_layout.setContentsMargins(self.dp(6), self.dp(45), self.dp(12), self.dp(1))  # (int left, int top, int right, int bottom)
         group_layout.addWidget(self.scroll_area)
         controls_layout.addWidget(self.aroma_group) # добавление группы ароматизаторов в колонку
         self.aroma_group.setLayout(group_layout) # установка лэйаута
@@ -267,13 +373,21 @@ class sa_vape(QWidget): # класс окна
         result_group_layout.addWidget(self.result_pg_label) # строка PG
         result_group_layout.addWidget(self.result_vg_label) # строка VG
         result_group_layout.addWidget(self.result_aroma_label) # строка ароматизаторов
+        result_group_layout.addWidget(self.btn_save_recipe) # добавление кнопки сохрания рецептов
         result_group_layout.addStretch()
         result_group.setObjectName("ResultGroup") # помещаем в контейнер для задания стилей
-        result_group.setLayout(result_group_layout)                         
+        result_group.setLayout(result_group_layout)      
 
-        content_layout.addLayout(controls_layout, 2)
-        content_layout.addWidget(result_group, 1)
+        # добавляем браузер
+        recipe_group_layout.addWidget(self.recipe_list)
+        recipe_group.setLayout(recipe_group_layout)                   
+
+        # добавляем группы на основной лэйаут
+        content_layout.addLayout(controls_layout, 4)
+        content_layout.addWidget(result_group, 3)
+        content_layout.addWidget(recipe_group, 2)
         
+        # метки авторов
         main_layout.addLayout(content_layout)
         header_label2 = QLabel("<center>By SilverDire And Ameteon</center>") # метка о авторах
         header_label2.setAttribute(Qt.WA_TransparentForMouseEvents, True)
@@ -289,7 +403,6 @@ class sa_vape(QWidget): # класс окна
         ## Заголовки
         header_label.setFont(QFont(FONT_FAMILIES["cyberpunk"], self.dp(45))) # установка шрифта заголовка
         header_label2.setFont(QFont(FONT_FAMILIES["zelek"], self.dp(20))) # установка шрифта надписи о авторах
-        header_rofl.setFont(QFont(FONT_FAMILIES["zelek"], self.dp(15))) # установка шрифта рофло надписи
         
         ## Включаем подсветку выбранных полей (для ароматизаторов в функции добавления)
         self.input_glow = FocusGlowFilter(QColor(0, 244, 255, 128), duration=200)
@@ -311,7 +424,7 @@ class sa_vape(QWidget): # класс окна
         group_font_QLabel = self.dp(14)
         group_font_QDoubleSpinBox = self.dp(14)
         group_font_QLineEdit = self.dp(15)
-        group_font_QGroupBox = self.dp(22)
+        group_font_QGroupBox = self.dp(18)
         group_font_QPushButton = self.dp(20)
 
         group_paddingUP_QGroupBox_title = self.dp(7)
@@ -391,7 +504,7 @@ class sa_vape(QWidget): # класс окна
         QGroupBox::title {{
             subcontrol-origin: content;
             subcontrol-position: top left;
-            padding: {group_paddingUP_QGroupBox_title}px {group_paddingRight_QGroupBox_title}px {group_paddingBottom_QGroupBox_title} {group_paddingLeft_QGroupBox_title}px;
+            padding: {group_paddingUP_QGroupBox_title}px {group_paddingRight_QGroupBox_title}px {group_paddingBottom_QGroupBox_title}px {group_paddingLeft_QGroupBox_title}px;
         }}
                            
         QPushButton {{
@@ -485,12 +598,44 @@ class sa_vape(QWidget): # класс окна
            color: white;
            }}
 
+        QListWidget {{
+            background: rgba(8, 12, 25, 0.6); /* Полупрозрачный темный фон */
+        /*    border: 1px solid #143245; */
+            border-radius: 8px;
+            padding: 5px;
+            color: #e0f7ff;
+            font-family: 'Arial';
+            font-size: 12pt;
+            outline: none; /* Убирает пунктирную рамку при клике */
+        }}
+
+        QListWidget::item {{
+            background: transparent;
+            border-radius: 4px;
+            padding: 8px;
+            margin-bottom: 2px;
+        }}
+
+        QListWidget::item:hover {{
+            background: rgba(0, 244, 255, 0.1); /* Легкая неоновая подсветка при наведении */
+            border: 1px solid #00f4ff;
+        }}
+
+        QListWidget::item:selected {{
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                        stop:0 rgba(61, 255, 255, 0.4), 
+                                        stop:1 rgba(255, 107, 255, 0.4));
+            border: 1px solid #ff3bf1;
+            color: #ffffff;
+        }}
+
+
         """)
         
         # Стили
         self.setLayout(main_layout) # установка основного лэйаута
         self.setWindowTitle("Расчет СТЕКЛА!") # заголовок окна
-        self.resize(self.dp(800), self.dp(800)) # размер окна
+        self.resize(self.dp(1100), self.dp(800)) # размер окна
         self.setWindowFlags(Qt.FramelessWindowHint)
         
     def add_aroma(self):
@@ -594,8 +739,8 @@ class sa_vape(QWidget): # класс окна
             if pg_ml < 0:
                 raise ValueError("Недостаточно объема для всех компонентов")
             
-            self.result_total_label.setText(f"Общий объем: {total_volume:.1f} мл")
-            self.result_nic_label.setText(f"Никотиновая база: {nic_needed:.2f} мл")
+            self.result_total_label.setText(f"Объем: {total_volume:.1f} мл")
+            self.result_nic_label.setText(f"База: {nic_needed:.2f} мл")
             self.result_pg_label.setText(f"PG: {pg_ml:.2f} мл")
             self.result_vg_label.setText(f"VG: {vg_ml:.2f} мл")
             if aromas:
